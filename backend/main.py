@@ -620,9 +620,9 @@ realtime_hub = RealtimeConnectionHub()
 class WeightsUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    alpha: float = 0.4
-    beta: float = 0.35
-    gamma: float = 0.25
+    alpha: float = 0.5
+    beta: float = 0.3
+    gamma: float = 0.2
 
 
 class PurchaseCreate(BaseModel):
@@ -1693,7 +1693,7 @@ def move_model_to_shadow(version: str, _csrf: None = Depends(csrf_header_dep)):
 @app.get("/api/weights")
 def get_weights():
     if not models["ready"]:
-        return {"alpha": 0.4, "beta": 0.35, "gamma": 0.25}
+        return {"alpha": 0.5, "beta": 0.3, "gamma": 0.2}
     return models["hybrid"].get_weights()
 
 
