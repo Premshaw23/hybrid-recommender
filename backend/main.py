@@ -149,8 +149,9 @@ async def health_check():
 
 RESPONSE_TIME_HEADER = "X-Response-Time-ms"
 DEFAULT_SLOW_RESPONSE_THRESHOLD_MS = 1000.0
-CACHE_TTL_SECONDS = 300
+CACHE_TTL_SECONDS = int(os.environ.get("CACHE_TTL_SECONDS", "300"))
 CACHE_CONTROL_VALUE = f"public, max-age={CACHE_TTL_SECONDS}"
+ENABLE_USER_SEGMENT_CACHE = os.environ.get("ENABLE_USER_SEGMENT_CACHE", "true").lower() in ("1", "true", "yes")
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 MAX_SEARCH_QUERY_LENGTH = 120
 _response_cache: dict = {}
@@ -204,6 +205,20 @@ def _get_slow_response_threshold_ms() -> float:
 
 def _cache_key(*parts: Any) -> str:
     return ":".join(str(part).strip().lower() for part in parts)
+
+
+def _user_segment(user_id: Optional[str]) -> str:
+    """Derive a non-identifying user segment from user_id for cache partitioning.
+
+    Uses a short prefix (first 8 chars) when available, otherwise 'anon'.
+    This avoids storing full PII in cache keys while still providing segmentation.
+    """
+    if not user_id:
+        return "anon"
+    try:
+        return str(user_id).strip()[:8].lower()
+    except Exception:
+        return "anon"
 
 
 def _get_cached_response(key: str):
@@ -1319,7 +1334,12 @@ def get_recommendations(
 
         selected_models = MODEL_REGISTRY[model_version]
 
-    cache_key = _cache_key("recommend", query_title, top_n, explain, user_id or "")
+    # Build cache key including a non-identifying user segment when enabled
+    if ENABLE_USER_SEGMENT_CACHE:
+        segment = _user_segment(user_id)
+    else:
+        segment = "anon"
+    cache_key = _cache_key("recommend", segment, query_title, top_n, explain, target_catalog or "")
     cached = _get_cached_response(cache_key)
     if cached is not None:
         _set_cache_headers(response, "HIT")
