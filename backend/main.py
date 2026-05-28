@@ -154,6 +154,8 @@ CACHE_CONTROL_VALUE = f"public, max-age={CACHE_TTL_SECONDS}"
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 MAX_SEARCH_QUERY_LENGTH = 120
 _response_cache: dict = {}
+_cache_hits = 0
+_cache_misses = 0
 ADMIN_API_TOKEN_ENV = "ADMIN_API_TOKEN"
 _rate_limit_buckets: dict = {}
 _rate_limit_lock = Lock()
@@ -208,22 +210,116 @@ def _get_cached_response(key: str):
     with _cache_lock:
         cached = _response_cache.get(key)
         if not cached:
+            global _cache_misses
+            _cache_misses += 1
             return None
         expires_at, value = cached
         if expires_at <= time.time():
             _response_cache.pop(key, None)
+            global _cache_misses
+            _cache_misses += 1
             return None
+        global _cache_hits
+        _cache_hits += 1
         return value
 
 
 def _set_cached_response(key: str, value: Any) -> None:
     with _cache_lock:
         _response_cache[key] = (time.time() + CACHE_TTL_SECONDS, value)
+        # track misses -> when we set a value it was previously a miss for the next requests
+        # metric updated in _get_cached_response when read.
 
 
 def _clear_response_cache() -> None:
     with _cache_lock:
         _response_cache.clear()
+        global _cache_hits, _cache_misses
+        _cache_hits = 0
+        _cache_misses = 0
+
+
+@app.get("/api/cache_metrics")
+def get_cache_metrics():
+    """Expose simple cache hit/miss metrics and configured TTL."""
+    return {
+        "cache_ttl_seconds": CACHE_TTL_SECONDS,
+        "hits": int(_cache_hits),
+        "misses": int(_cache_misses),
+        "current_items": len(_response_cache),
+    }
+
+
+def _build_tfidf_for_items(item_df):
+    """Build and return a TF-IDF matrix and vectorizer for the given item_df."""
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    texts = (item_df.get('combined') or item_df.get('title')).fillna('').astype(str).tolist()
+    vec = TfidfVectorizer(max_features=16384, stop_words='english')
+    matrix = vec.fit_transform(texts)
+    return vec, matrix
+
+
+def cold_start_recommendation(combined_text: str, top_n: int = 10, weights: tuple[float, float, float] = (0.6, 0.3, 0.1), target_catalog: Optional[str] = None):
+    """Cold-start blending of content similarity (TF-IDF) and simple popularity/rating signals.
+
+    Returns list of dicts with blended score and components.
+    """
+    import numpy as np
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    item_df = models.get('item_df')
+    if item_df is None or item_df.empty:
+        return []
+
+    vec, matrix = _build_tfidf_for_items(item_df)
+    try:
+        qv = vec.transform([combined_text])
+    except Exception:
+        return []
+
+    scores = cosine_similarity(qv, matrix).flatten()
+
+    # Popularity normalization (review_count) and rating normalization
+    review_counts = item_df.get('review_count', None)
+    if review_counts is None or len(review_counts) == 0:
+        pop_norm = np.zeros_like(scores)
+    else:
+        max_rc = float(max(1, int(review_counts.max())))
+        pop_norm = (np.array(item_df.get('review_count').fillna(0).astype(float)) / max_rc)
+
+    ratings = item_df.get('rating')
+    if ratings is None or len(ratings) == 0:
+        rating_norm = np.zeros_like(scores)
+    else:
+        rating_norm = (np.array(item_df.get('rating').fillna(0).astype(float)) / 5.0)
+
+    alpha, beta, gamma = weights
+
+    blended = alpha * scores + beta * pop_norm + gamma * rating_norm
+
+    idxs = blended.argsort()[::-1]
+    results = []
+    seen = set()
+    for idx in idxs:
+        title = str(item_df.iloc[idx].get('title', ''))
+        if not title or title in seen:
+            continue
+        if target_catalog and 'category' in item_df.columns:
+            cat = str(item_df.iloc[idx].get('category', ''))
+            if cat and cat.casefold() != target_catalog.casefold():
+                continue
+        seen.add(title)
+        results.append({
+            'title': title,
+            'blended_score': float(blended[idx]),
+            'content_score': float(scores[idx]),
+            'popularity_score': float(pop_norm[idx]),
+            'rating_norm': float(rating_norm[idx]),
+        })
+        if len(results) >= top_n:
+            break
+
+    return results
 
 
 def _normalize_search_query(query: str) -> str:
@@ -1232,11 +1328,18 @@ def get_recommendations(
     recs = selected_models["hybrid"].recommend(
         query_title, top_n=top_n, explain=explain, target_catalog=target_catalog
     )
-  
+
+    # Popularity fallback (existing behaviour)
     if not recs and strategy == "popularity" and models["collab"]:
         recs = models["collab"]._popularity_fallback(top_n)
-    
-    
+
+    # Cold-start fallback: blend content similarity with popularity/rating
+    if not recs and (strategy == "cold"):
+        combined_text = query_title
+        cold_recs = cold_start_recommendation(combined_text, top_n=top_n, target_catalog=target_catalog)
+        if cold_recs:
+            recs = cold_recs
+
     if not recs:
         raise HTTPException(404, "Item not found or no recommendations.")
 
@@ -1304,6 +1407,52 @@ def get_recommendations(
     _set_cached_response(cache_key, payload)
     _set_cache_headers(response, "MISS")
     return payload
+
+
+
+@app.get("/api/recommend/cold_start")
+def recommend_cold_start(
+    response: Response,
+    title: Optional[str] = Query(None),
+    description: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    tags: Optional[str] = Query(None),
+    top_n: int = Query(10, ge=1, le=100),
+    alpha: float = Query(0.6),
+    beta: float = Query(0.3),
+    gamma: float = Query(0.1),
+    target_catalog: Optional[str] = Query(None),
+):
+    """Cold-start recommendation endpoint.
+
+    Accepts item metadata (title, description, category, tags) and returns
+    blended recommendations based on content TF-IDF similarity and popularity.
+    """
+    if not models or not models.get('item_df'):
+        raise HTTPException(400, "Models not built or no item catalog available.")
+
+    parts = []
+    if title:
+        parts.append(str(title))
+    if description:
+        parts.append(str(description))
+    if category:
+        parts.append(str(category))
+    if tags:
+        parts.append(str(tags))
+
+    combined_text = " ".join(parts).strip()
+    if not combined_text:
+        raise HTTPException(400, "Provide at least one of title, description, category or tags.")
+
+    weights = (float(alpha), float(beta), float(gamma))
+    recs = cold_start_recommendation(combined_text, top_n=top_n, weights=weights, target_catalog=target_catalog)
+    if not recs:
+        raise HTTPException(404, "No cold-start recommendations available.")
+
+    # Do not cache cold-start responses by default (content depends on input metadata)
+    _set_cache_headers(response, "MISS")
+    return {"query": combined_text, "recommendations": recs, "weights": {"alpha": weights[0], "beta": weights[1], "gamma": weights[2]}}
 
 
 @app.get("/api/user_recommend")
