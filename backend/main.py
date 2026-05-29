@@ -1140,6 +1140,7 @@ def train_federated(req: FederatedTrainRequest):
 @app.get("/api/recommend")
 @app.get("/api/recommend/{item_title}")
 def get_recommendations(
+    request: Request,
     response: Response,
     item_title: Optional[str] = None,
     title: Optional[str] = Query(None),
@@ -1204,7 +1205,10 @@ def get_recommendations(
         has_history = user_id in models["collab"]._user_to_idx
 
     payload = {
+        "query": query_title,
         "query_item": query_title,
+        "count": len(recs),
+        "results": recs,
         "recommendations": recs,
         "weights": models["hybrid"].get_weights(),
         "explain": explain,
@@ -1605,16 +1609,21 @@ def get_trending_products(
     """
     Get trending products based on recent interactions.
     """
+    global TRENDING_CACHE
 
     # Cache for 1 hour
     now = datetime.utcnow()
 
-    if (
-        TRENDING_CACHE["data"] is not None and
-        TRENDING_CACHE["timestamp"] is not None and
-        (now - TRENDING_CACHE["timestamp"]).seconds < 3600
-    ):
-        return TRENDING_CACHE["data"]
+    cache_key = (days, limit)
+    if isinstance(TRENDING_CACHE, dict) and "data" in TRENDING_CACHE and TRENDING_CACHE["data"] is None:
+        cached_val = None
+    else:
+        cached_val = TRENDING_CACHE.get(cache_key)
+
+    if cached_val is not None:
+        timestamp, cached_data = cached_val
+        if (now - timestamp).total_seconds() < 3600:
+            return cached_data
 
     sb = get_supabase()
 
@@ -1708,8 +1717,12 @@ def get_trending_products(
         "limit": limit,
     }
 
-    TRENDING_CACHE["data"] = response
-    TRENDING_CACHE["timestamp"] = now
+    if isinstance(TRENDING_CACHE, dict):
+        TRENDING_CACHE.pop("data", None)
+        TRENDING_CACHE.pop("timestamp", None)
+        TRENDING_CACHE[cache_key] = (now, response)
+    else:
+        TRENDING_CACHE = {cache_key: (now, response)}
 
     return response
 
