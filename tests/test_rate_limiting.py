@@ -106,7 +106,7 @@ def test_non_limited_endpoint_does_not_emit_rate_limit_headers():
 
 
 class FakeHybrid:
-    def recommend(self, title, top_n=10, explain=False):
+    def recommend(self, title, top_n=10, explain=False, target_catalog=None, **kwargs):
         return [{"title": f"{title} match", "hybrid_score": 0.9}][:top_n]
 
     def get_weights(self):
