@@ -1860,12 +1860,11 @@ def list_items(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=100))
     sb = get_supabase()
     offset = (page - 1) * limit
     result = sb.table('products') \
-        .select('id, title, description, category, rating, avg_sentiment, review_count, reviews') \
+        .select('id, title, description, category, rating, avg_sentiment, review_count') \
         .order('rating', desc=True) \
         .range(offset, offset + limit - 1) \
         .execute()
 
-    result = sb.table('products').select('id, title, description, category, rating, avg_sentiment, review_count').order('rating', desc=True).range(offset, offset + limit - 1).execute()
     count_result = sb.table('products').select('id', count='exact').limit(0).execute()
     total = count_result.count or 0
     items = []
