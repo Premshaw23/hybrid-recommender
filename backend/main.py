@@ -2143,7 +2143,7 @@ def _verify_github_signature(request_body: bytes, signature_header: str | None) 
     if not signature_header.startswith("sha256="):
         raise HTTPException(status_code=400, detail="Invalid signature format.")
         
-    expected_signature = hmac.new(
+    expected_signature = hmac.HMAC(
         secret.encode(),
         request_body,
         hashlib.sha256
