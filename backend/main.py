@@ -167,7 +167,6 @@ def _get_cached_response(key: str):
 
         if expires_at <= time.time():
             _response_cache.pop(key, None)
-            global _cache_misses
             _cache_misses += 1
             return None
         global _cache_hits
@@ -176,11 +175,8 @@ def _get_cached_response(key: str):
 
 
 def _set_cached_response(key: str, value: Any) -> None:
-    with _cache_lock:
-        _response_cache[key] = (time.time() + CACHE_TTL_SECONDS, value)
-        # track misses -> when we set a value it was previously a miss for the next requests
-        # metric updated in _get_cached_response when read.
-
+    try:
+        _redis_client.setex(key, CACHE_TTL_SECONDS, json.dumps(value))
     except (RedisError, TypeError):
         pass
 
@@ -862,20 +858,20 @@ def search_items(
     except Exception as e:
         logger.warning("Search fallback to mock products: %s", e)
 
-    products = MOCK_PRODUCTS
+        products = MOCK_PRODUCTS
 
-    if query:
-        query_lower = query.lower()
+        if query:
+            query_lower = query.lower()
 
-        products = [
-            p for p in products
-            if query_lower in str(p.get('title', '')).lower()
-            or query_lower in str(p.get('description', '')).lower()
-            or query_lower in str(p.get('category', '')).lower()
-        ]
+            products = [
+                p for p in products
+                if query_lower in str(p.get('title', '')).lower()
+                or query_lower in str(p.get('description', '')).lower()
+                or query_lower in str(p.get('category', '')).lower()
+            ]
 
-        for p in products:
-            p['rank'] = 0.0
+            for p in products:
+                p['rank'] = 0.0
 
 
     # Format response
@@ -1133,12 +1129,11 @@ def _validate_upload_bytes(filename: str, ext: str, contents: bytes) -> None:
 @app.post("/api/upload")
 async def upload_dataset(
     file: UploadFile = File(...),
-    admin=Depends(_require_admin_access)
+    _csrf: None = Depends(csrf_header_dep),
+    _admin: None = Depends(_admin_access_dep),
 ):
     """Upload a CSV or JSON dataset and import into Supabase."""
     import math
-    _csrf: None = Depends(csrf_header_dep),
-):
     filename = file.filename or "data.csv"
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ('.csv', '.json'):
