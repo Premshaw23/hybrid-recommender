@@ -58,13 +58,13 @@ class HybridRecommender:
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
-        self.kg_model = kg_model
-        self.delta = delta
+        self.kg_model = None  # knowledge-graph model; set via model_kwargs if provided
+        self.delta = model_kwargs.get("delta", 0.15) if model_kwargs else 0.15
 
         # Expose model kwargs explicitly as structural configuration dictionaries
         # Legacy compatibility: no explicit model_kwargs parameter in signature,
         # so initialize empty dict to avoid NameError.
-        self.model_kwargs = {}
+        self.model_kwargs = model_kwargs or {}
 
         # Apply exposed parameters if dynamic updates are supplied on runtime triggers
         if self.collab_model and self.model_kwargs:
