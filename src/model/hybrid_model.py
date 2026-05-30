@@ -400,6 +400,18 @@ class HybridRecommender:
 
         
 
+        # Resolve active weights using configured weights matrix, bases, or manual override
+        if weights and len(weights) == 3:
+            tot = sum(weights)
+            if tot > 0:
+                a, b, g = [float(w) / tot for w in weights]
+            else:
+                a, b, g = self.alpha, self.beta, self.gamma
+        else:
+            a, b, g = self._get_active_weights(
+                self.alpha, self.beta, self.gamma, user_id=user_id, candidate_titles=all_titles
+            )
+
         # 6. Compute hybrid score with capped popularity boost to protect [0, 1] constraint
         results = []
         for i, item in enumerate(items):
