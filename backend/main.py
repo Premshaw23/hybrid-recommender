@@ -260,6 +260,16 @@ def _set_cached_response(key: str, value: Any) -> None:
 
 
 def _set_cached_response(key: str, value: Any) -> None:
+    try:
+        if _redis_client:
+            _redis_client.setex(
+                key,
+                CACHE_TTL_SECONDS,
+                json.dumps(value),
+            )
+    except (RedisError, TypeError):
+        pass
+
     with _cache_lock:
         _response_cache[key] = (time.time() + CACHE_TTL_SECONDS, value)
 
