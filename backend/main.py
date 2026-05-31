@@ -234,12 +234,12 @@ def _set_cached_response(key: str, value: Any) -> None:
 
         expires_at, value = cached
 
-    cached = _response_cache.get(key)
-    if cached is None:
-        _cache_misses += 1
-        return None
-    _cache_hits += 1
-    return cached
+        if expires_at <= time.time():
+            _response_cache.pop(key, None)
+            _cache_misses += 1
+            return None
+        _cache_hits += 1
+        return value
 
 
 def _set_cached_response(key: str, value: Any) -> None:
@@ -1218,10 +1218,9 @@ async def upload_dataset(
         raw_df = read_file(buf, file_format=ext.replace('.', ''))
         adapted_df, meta = adapt_data(raw_df)
         adapted_df = adapted_df.drop_duplicates(subset='title', keep='first')
-        try:
-            sb = get_supabase_admin()
-        except RuntimeError:
-            sb = get_supabase()
+        sb = get_supabase_admin()
+        if sb is None:
+            raise HTTPException(status_code=500, detail="Admin credentials not configured.")
         batch_size = 500
         total = len(adapted_df)
         imported = 0
@@ -1286,10 +1285,9 @@ def build_models(
     _admin: None = Depends(_admin_access_dep),
 ):
     global STAGING_MODEL_VERSION
-    try:
-       sb = get_supabase_admin()
-    except RuntimeError:
-        sb = get_supabase()
+    sb = get_supabase_admin()
+    if sb is None:
+        raise HTTPException(status_code=500, detail="Admin credentials not configured.")
     all_products = []
     page_size = 1000
     offset = 0
