@@ -228,6 +228,7 @@ def _get_cached_response(key: str):
 
 def _set_cached_response(key: str, value: Any) -> None:
     _response_cache.set(key, value)
+    
     try:
         cached = _redis_client.get(key)
 
@@ -276,11 +277,6 @@ def _set_cached_response(key: str, value: Any) -> None:
 
 def _clear_response_cache() -> None:
     _response_cache.clear()
-    with _cache_lock:
-        _response_cache.clear()
-        global _cache_hits, _cache_misses
-        _cache_hits = 0
-        _cache_misses = 0
 
 
 @app.get("/api/cache_metrics")
