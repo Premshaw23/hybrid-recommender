@@ -54,6 +54,6 @@ class FeatureStore:
 
     def _load(self, filename, target):
         path = os.path.join(self.store_path, filename)
-        if os.path.exists(path) and not target:
+        if os.path.exists(path):
             with open(path, "rb") as f:
                 target.update(pickle.load(f))
