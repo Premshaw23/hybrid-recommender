@@ -222,6 +222,7 @@ def _cache_key(*parts: Any) -> str:
 
 
 def _get_cached_response(key: str):
+    global _cache_hits, _cache_misses
     return _response_cache.get(key)
 
 
