@@ -234,16 +234,17 @@ def _set_cached_response(key: str, value: Any) -> None:
 
         expires_at, value = cached
 
-    cached = _response_cache.get(key)
-    if cached is None:
-        _cache_misses += 1
-        return None
-    _cache_hits += 1
-    return cached
+        if expires_at <= time.time():
+            _response_cache.pop(key, None)
+            _cache_misses += 1
+            return None
+        _cache_hits += 1
+        return value
 
 
 def _set_cached_response(key: str, value: Any) -> None:
-    _response_cache.set(key, value)
+    with _cache_lock:
+        _response_cache[key] = (time.time() + CACHE_TTL_SECONDS, value)
 
 def _clear_response_cache() -> None:
     global _cache_hits, _cache_misses
@@ -1196,12 +1197,10 @@ def _validate_upload_bytes(filename: str, ext: str, contents: bytes) -> None:
 @app.post("/api/upload")
 async def upload_dataset(
     file: UploadFile = File(...),
-    _csrf: None = Depends(csrf_header_dep),
     admin=Depends(_require_admin_access),
+    _csrf: None = Depends(csrf_header_dep),
 ):
     """Upload a CSV or JSON dataset and import into Supabase."""
-    import math
-
     filename = file.filename or "data.csv"
     ext = os.path.splitext(filename)[1].lower()
     if ext not in ('.csv', '.json'):
@@ -1213,10 +1212,9 @@ async def upload_dataset(
         raw_df = read_file(buf, file_format=ext.replace('.', ''))
         adapted_df, meta = adapt_data(raw_df)
         adapted_df = adapted_df.drop_duplicates(subset='title', keep='first')
-        try:
-            sb = get_supabase_admin()
-        except RuntimeError:
-            sb = get_supabase()
+        sb = get_supabase_admin()
+        if sb is None:
+            raise HTTPException(status_code=500, detail="Admin credentials not configured.")
         batch_size = 500
         total = len(adapted_df)
         imported = 0
@@ -1281,10 +1279,9 @@ def build_models(
     _admin: None = Depends(_admin_access_dep),
 ):
     global STAGING_MODEL_VERSION
-    try:
-       sb = get_supabase_admin()
-    except RuntimeError:
-        sb = get_supabase()
+    sb = get_supabase_admin()
+    if sb is None:
+        raise HTTPException(status_code=500, detail="Admin credentials not configured.")
     all_products = []
     page_size = 1000
     offset = 0
