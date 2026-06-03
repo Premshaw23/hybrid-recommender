@@ -134,6 +134,7 @@ class ContentRecommender:
                 'description': str(self.df.iloc[idx].get('description', ''))[:200],
                 'top_reviews': top_reviews,
             })
+
             if len(results) >= top_n:
                 break
 
