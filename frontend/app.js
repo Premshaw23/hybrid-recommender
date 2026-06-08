@@ -566,8 +566,8 @@ function initTypeToSearch() {
     });
 }
 
-// ── Search ──────────────────────────────────────────────────────────
-async function handleSearch(query) {
+// ── Search (full-text) ──────────────────────────────────────────────
+async function triggerFullSearch(query) {
     if (!query || query.length < 1) {
         closeSearchDropdown();
         return;
