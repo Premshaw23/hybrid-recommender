@@ -105,7 +105,9 @@ async function initSupabase() {
 const state = {
     user: null,
     isGuest: true,
-    products: [],    trending: [],    page: 1,
+    products: [],    
+    trending: [],    
+    page: 1,
     perPage: 20,
     totalProducts: 0,
     isLoading: false,
@@ -123,6 +125,15 @@ const state = {
     activeChips: new Set(['all']),
     heatmapSelected: [],
     filters: { category: '', rating: '', sentiment: '' },
+
+    // 🚀 CRITICAL SECURITY BUG FIX: Initialize missing structural state fields
+    activeChips: new Set(),
+    heatmapSelected: [],
+    allProducts: [],
+    searchResults: [],
+    recommendationSocket: null,
+    pendingRecommendationTitle: null,
+    realtimeReady: false
     recommendationSocket: null,
 };
 
