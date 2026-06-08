@@ -528,7 +528,8 @@ class HybridRecommender:
             )
 
         collab_recs = self.collab_model.predict_for_user(mapped_user_id, top_n=top_n * 3)
-        recent_titles = history_tracker.get_recent_titles(mapped_user_id)
+        _tracker = getattr(self, 'history_tracker', None)
+        recent_titles = _tracker.get_recent_titles(mapped_user_id) if _tracker is not None else set()
 
         collab_recs = [ 
             rec for rec in collab_recs
