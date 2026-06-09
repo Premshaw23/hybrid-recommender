@@ -114,6 +114,9 @@ from issue_triage import triage_issue
 # ── App ──────────────────────────────────────────────────────────────
 app = FastAPI(title="Hybrid Recommender API", version="3.0")
 
+# Register routers
+app.include_router(recommend.router, prefix="/api")
+
 # 🚀 DEGRADED MODE TELEMETRY TRACKER GLOBALS
 _model_degraded = False
 _model_degraded_reason: Optional[str] = None
