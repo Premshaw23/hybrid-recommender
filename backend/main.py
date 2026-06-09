@@ -222,6 +222,8 @@ def _get_cached_response(key: str):
             if cached is not None:
                 _cache_hits += 1
                 return json.loads(cached)
+        except (RedisError, Exception):
+            pass
 
     with _cache_lock:
         cached = _response_cache.get(key)
