@@ -50,7 +50,7 @@ class DatasetManager:
         raw_df = preprocess(raw_df)
         adapted_df, meta = adapt_data(raw_df)
         adapted_df['catalog'] = catalog
-
+        
         ds_id = str(uuid.uuid4())[:8]
         self._datasets[ds_id] = {
             'name': name,
