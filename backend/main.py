@@ -1586,7 +1586,7 @@ async def get_recommendation_explanation(item_id: str, user_id: str):
     Task 3: Executes a typo-tolerant string similarity lookup 
     using the PostgreSQL pg_trgm extension via Supabase RPC.
     """
-    query = _normalize_search_query(q)
+    query = _normalize_search_query(item_id)
     if not query:
         return {"results": [], "count": 0, "query": query}
 
