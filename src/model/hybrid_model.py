@@ -33,6 +33,7 @@ import numpy as np
 
 from src.model.causal_config import CausalConfig
 from src.model.causal_model import CausalDebiaser
+from src.model.recommendation_history import history_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -431,8 +432,8 @@ class HybridRecommender:
             arm_id = self.select_bandit_arm()
             a, b, g = getattr(self, 'bandit_arms', [(self.alpha, self.beta, self.gamma)])[arm_id]
 
-            a, b, g, d = self._get_active_weights(
-                a, b, g, getattr(self, 'delta', 0),
+            a, b, g = self._get_active_weights(
+                candidate_titles=list(candidates.keys()),
                 user_id=user_id,
             )
             d = self.delta if self.kg_model else 0.0
