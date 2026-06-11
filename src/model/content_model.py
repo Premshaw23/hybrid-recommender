@@ -9,6 +9,7 @@ Optimizations:
 import numpy as np
 import pandas as pd
 from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from src.model.validation import validate_recommendations
 
@@ -104,7 +105,7 @@ class ContentRecommender:
             
             results.append({
                 "title": t,
-                "content_score": float(scores[i])
+                "content_score": float(score)
             })
             
             if len(results) >= top_n:
